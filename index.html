@@ -145,7 +145,7 @@ kbd{font:500 .9em/1 var(--f-mono);border:1px solid var(--line-2);border-bottom-w
 
 /* ---------- the painting ---------- */
 .scene{grid-area:stage;position:relative;margin:0;justify-self:end;align-self:center}
-.stage{position:relative;height:clamp(600px,92vh,1040px);aspect-ratio:572/1024;max-width:100%;touch-action:manipulation}
+.stage{--h:clamp(600px,92vh,1040px);position:relative;height:var(--h);width:calc(var(--h) * 572 / 1024);aspect-ratio:572/1024;max-width:calc(100vw - 32px);touch-action:manipulation}
 .layers{position:absolute;inset:0;overflow:hidden;
   -webkit-mask-image:linear-gradient(90deg,transparent,#000 7%,#000 94%,transparent),linear-gradient(180deg,transparent,#000 4%,#000 93%,transparent);
   -webkit-mask-composite:source-in;
@@ -249,6 +249,7 @@ kbd{font:500 .9em/1 var(--f-mono);border:1px solid var(--line-2);border-bottom-w
 
 /* ---------- sections ---------- */
 .sec{padding-block:clamp(64px,9vw,112px) 0;scroll-margin-top:16px}
+.sec:focus,.hero:focus{outline:none}
 .sec-in{max-width:1080px;margin:0 auto}
 .sec-h{display:flex;align-items:baseline;justify-content:space-between;gap:10px 18px;flex-wrap:wrap;margin-bottom:30px;padding-bottom:14px;border-bottom:1px dashed var(--line-2)}
 .sec-h h2{margin:0;font:700 clamp(1.35rem,2.3vw,1.85rem)/1.15 var(--f-mono);letter-spacing:-.02em;color:var(--ink)}
@@ -346,7 +347,7 @@ kbd{font:500 .9em/1 var(--f-mono);border:1px solid var(--line-2);border-bottom-w
 @media (max-width:880px){
   .hero{grid-template-columns:minmax(0,1fr);grid-template-areas:"head" "stage" "body";row-gap:22px;padding-top:18px}
   .scene{justify-self:center;width:100%;max-width:470px}
-  .stage{height:auto;width:100%}
+  .stage{height:auto;width:100%;max-width:100%}
   .hero::before{inset:10% -30% 20% -30%;background:radial-gradient(50% 40% at 50% 45%,rgba(241,170,80,.14),transparent 75%)}
   .hero::after{inset:30% -20% 10% -20%}
   .status{display:none}
@@ -826,6 +827,7 @@ function drawFx(dt) {
 }
 
 /* ------------------------------------------------ main loop */
+const heroEl = $(".hero"), lastVars = { off: "", smile: "" };
 let running = false, last = 0, visible = true, inView = true, flickT = 0, flickTarget = 1, pointerSeen = false;
 function kick() { if (!running) { running = true; last = performance.now(); requestAnimationFrame(frame); } }
 function frame(now) {
@@ -838,9 +840,10 @@ function frame(now) {
     if (!pointerSeen) { S.tx = Math.sin(S.t * .13) * .5; S.ty = Math.cos(S.t * .1) * .35; }
     S.parX += (S.tx - S.parX) * Math.min(1, dt * 3); S.parY += (S.ty - S.parY) * Math.min(1, dt * 3);
   }
-  root.style.setProperty("--off", S.off.toFixed(3));
-  root.style.setProperty("--smile", S.smile.toFixed(3));
-  root.style.setProperty("--flick", S.flick.toFixed(3));
+  const offV = S.off.toFixed(3), smileV = S.smile.toFixed(3);
+  if (offV !== lastVars.off) { root.style.setProperty("--off", offV); lastVars.off = offV; }
+  if (smileV !== lastVars.smile) { root.style.setProperty("--smile", smileV); lastVars.smile = smileV; }
+  if (inView) heroEl.style.setProperty("--flick", S.flick.toFixed(2));
   if (inView) { sizeCanvases(); drawGL(); drawFx(dt); }
   moth.step(dt, now);
   if ((!reduce && visible) || tweens.length || sparks.length) requestAnimationFrame(frame); else running = false;
@@ -1090,7 +1093,7 @@ const Term = (() => {
     hi() { sayHi(); print("hi! :)  look up at the desk."); },
     resume() { print("my résumé is available on request: " + cmd("contact")); },
     open(args) { const id = (args[0] || "").replace(/^\.?\/?/, "").replace(/\/.*$/, ""); const el = id && document.getElementById(id === "fedzta" ? "fedzta" : id);
-      if (el && el.classList.contains("sec")) { el.scrollIntoView({ behavior: reduce ? "auto" : "smooth" }); print("opening " + esc(id) + "…"); } else print("usage: open experience | fedzta | papers | skills | contact"); },
+      if (el && el.classList.contains("sec")) { scrollToEl(el); print("opening " + esc(id) + "…"); } else print("usage: open experience | fedzta | papers | skills | contact"); },
     coffee() { print("brewing… actually, the mug on the desk is already full."); },
   };
   C.hello = C.hi; C.nano = C.emacs = C.vim; C.exp = C.experience; C.sound = C.rain; C.cls = C.clear; C.quit = C.exit;
@@ -1297,12 +1300,30 @@ addEventListener("pointerdown", (e) => {
   moth.cursor(e.pageX, e.pageY);
 }, { passive: true });
 
+/* ------------------------------------------------ quick, smooth jumps to sections */
+function scrollToEl(el) {
+  const y = Math.max(0, el.getBoundingClientRect().top + scrollY - 16);
+  scrollTo({ top: y, behavior: reduce ? "instant" : "smooth" });
+}
+document.addEventListener("click", (e) => {
+  const a = e.target.closest('a[href^="#"]');
+  if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  const id = a.getAttribute("href").slice(1), el = id && document.getElementById(id);
+  if (!el) return;
+  e.preventDefault();
+  scrollToEl(el);
+  history.pushState(null, "", "#" + id);
+  if (!el.hasAttribute("tabindex")) el.setAttribute("tabindex", "-1");
+  el.focus({ preventScroll: true });
+});
+
 /* ------------------------------------------------ status line follows the section in view */
 {
   const secs = [...document.querySelectorAll(".sec[data-file]")];
   const pathEl = document.querySelector(".status .mode + span");
   const update = () => { let f = "index.html"; for (const s of secs) if (s.getBoundingClientRect().top < innerHeight * .45) f = s.dataset.file; pathEl.textContent = "~/portfolio/" + f; };
-  addEventListener("scroll", update, { passive: true }); update();
+  let queued = false;
+  addEventListener("scroll", () => { if (!queued) { queued = true; requestAnimationFrame(() => { queued = false; update(); }); } }, { passive: true }); update();
 }
 
 /* ------------------------------------------------ start: the lamp clicks on */
